@@ -1,24 +1,16 @@
-//
-//  ContentView.swift
-//  GymFit
-//
-//  Created by angel on 6/6/25.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var weightStore = WeightStore()
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationView {
+            WeightTrackingView()
+                .environmentObject(weightStore)
         }
-        .padding()
     }
 }
 
 #Preview {
     ContentView()
-}
+} 
