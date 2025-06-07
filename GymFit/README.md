@@ -26,7 +26,7 @@ GymFit es una aplicación iOS desarrollada en SwiftUI para el seguimiento y aná
 
 1. Clona el repositorio:
 ```bash
-git clone https://github.com/tu-usuario/GymFit.git
+git clone https://github.com/angelcriber99/GymFit.git
 ```
 
 2. Abre el proyecto en Xcode:
