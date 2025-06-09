@@ -2,107 +2,126 @@ import SwiftUI
 import Charts
 
 struct WeightTrackingView: View {
-    @EnvironmentObject private var weightStore: WeightStore
-    @State private var showingWeightEntry = false
-    @State private var selectedTimeFrame: TimeFrame = .week
-    @State private var showingDeleteAlert = false
-    @State private var entryToDelete: WeightEntry?
-    @State private var selectedEntry: WeightEntry?
+    @StateObject private var weightStore = WeightStore()
+    @AppStorage("selectedTimeFrame") private var selectedTimeFrame: TimeFrame = .month
+    @State private var animateChart = false
+    @State private var showingWeightInput = false
+    @State private var showingEditWeight = false
+    @State private var newWeight = ""
+    @State private var selectedDate = Date()
+    @State private var weightToEdit: WeightEntry?
+    @FocusState private var isWeightFocused: Bool
     
-    enum TimeFrame: String, CaseIterable {
-        case week = "Semana"
-        case month = "Mes"
-        case year = "Año"
-        case all = "Todo"
+    var filteredEntries: [WeightEntry] {
+        weightStore.weights.filter { entry in
+            switch selectedTimeFrame {
+            case .week:
+                return Calendar.current.isDate(entry.date, equalTo: Date(), toGranularity: .weekOfYear)
+            case .month:
+                return Calendar.current.isDate(entry.date, equalTo: Date(), toGranularity: .month)
+            case .year:
+                return Calendar.current.isDate(entry.date, equalTo: Date(), toGranularity: .year)
+            }
+        }
     }
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                SummaryCard(weightStore: weightStore, accentColor: .blue)
+            VStack(spacing: 20) {
+                SummaryCard(weightStore: weightStore)
                 
-                Picker("Período", selection: $selectedTimeFrame) {
-                    ForEach(TimeFrame.allCases, id: \.self) { timeFrame in
-                        Text(timeFrame.rawValue).tag(timeFrame)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                
-                WeightChartView(
+                WeightChartSection(
                     entries: filteredEntries,
-                    selectedEntry: selectedEntry,
-                    onEntrySelected: { selectedEntry = $0 }
+                    selectedTimeFrame: $selectedTimeFrame,
+                    animate: animateChart
                 )
                 
-                if let entry = selectedEntry {
-                    SelectedEntryDetail(
-                        entry: entry,
-                        onDismiss: { selectedEntry = nil }
-                    )
-                }
-                
-                RecentEntriesList(
-                    entries: weightStore.entries,
-                    onDelete: { entry in
-                        entryToDelete = entry
-                        showingDeleteAlert = true
-                    }
-                )
+                WeightHistorySection(weightStore: weightStore)
             }
-            .padding(.vertical)
+            .padding()
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Mi Progreso")
-        .navigationBarTitleDisplayMode(.large)
+        .background(Color.white)
+        .navigationTitle("Registro de Peso")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingWeightEntry = true }) {
+                Button(action: { 
+                    weightToEdit = nil
+                    newWeight = ""
+                    selectedDate = Date()
+                    showingWeightInput = true 
+                }) {
                     Image(systemName: "plus.circle.fill")
                         .font(.title2)
-                        .foregroundColor(.blue)
                 }
             }
         }
-        .sheet(isPresented: $showingWeightEntry) {
-            NavigationView {
-                WeightEntryForm(weightStore: weightStore) {
-                    showingWeightEntry = false
-                }
-                .navigationTitle("Nuevo Registro")
-                .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if showingWeightInput || showingEditWeight {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        isWeightFocused = false
+                        showingWeightInput = false
+                        showingEditWeight = false
+                    }
+                
+                WeightInputPopup(
+                    weight: $newWeight,
+                    date: $selectedDate,
+                    isFocused: _isWeightFocused,
+                    onSave: {
+                        if showingEditWeight, let entry = weightToEdit {
+                            weightStore.updateWeight(entry.id, newWeight: Double(newWeight.replacingOccurrences(of: ",", with: ".")) ?? 0, newDate: selectedDate)
+                        } else {
+                            saveWeight()
+                        }
+                    },
+                    onDismiss: { 
+                        showingWeightInput = false
+                        showingEditWeight = false
+                    },
+                    isEditing: showingEditWeight
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .alert("¿Eliminar registro?", isPresented: $showingDeleteAlert) {
-            Button("Cancelar", role: .cancel) { }
-            Button("Eliminar", role: .destructive) {
-                if let entry = entryToDelete {
-                    weightStore.deleteEntry(entry)
-                }
-            }
-        } message: {
-            if let entry = entryToDelete {
-                Text("¿Estás seguro de que quieres eliminar el registro del \(entry.date.formatted(date: .long, time: .omitted))?")
+        .animation(.spring(), value: showingWeightInput)
+        .animation(.spring(), value: showingEditWeight)
+        .preferredColorScheme(.light)
+        .onAppear {
+            withAnimation(.spring()) {
+                animateChart = true
             }
         }
     }
     
-    private var filteredEntries: [WeightEntry] {
-        let calendar = Calendar.current
-        let now = Date()
-        let startDate: Date
-        
-        switch selectedTimeFrame {
-        case .week:
-            startDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-        case .month:
-            startDate = calendar.date(byAdding: .month, value: -1, to: now) ?? now
-        case .year:
-            startDate = calendar.date(byAdding: .year, value: -1, to: now) ?? now
-        case .all:
-            return weightStore.entries
+    private var isValidWeight: Bool {
+        guard let weightValue = Double(newWeight.replacingOccurrences(of: ",", with: ".")) else {
+            return false
+        }
+        return weightValue > 0 && weightValue < 500
+    }
+    
+    private func saveWeight() {
+        guard let weightValue = Double(newWeight.replacingOccurrences(of: ",", with: ".")) else {
+            return
         }
         
-        return weightStore.entries.filter { $0.date >= startDate }
+        weightStore.addWeight(weightValue, date: selectedDate)
+        newWeight = ""
+        showingWeightInput = false
+        
+        withAnimation(.spring()) {
+            animateChart = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                animateChart = true
+            }
+        }
     }
+}
+
+enum TimeFrame: String, CaseIterable {
+    case week = "Semana"
+    case month = "Mes"
+    case year = "Año"
 } 

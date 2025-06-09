@@ -9,9 +9,14 @@ import SwiftUI
 
 @main
 struct GymFitApp: App {
+    @StateObject private var weightStore = WeightStore()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            NavigationView {
+                WeightTrackingView()
+                    .environmentObject(weightStore)
+            }
         }
     }
 }
